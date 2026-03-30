@@ -227,3 +227,35 @@ Scan → Review CSV → Detect duplicates → Dry-run → Execute → Verify
 # 🧠 Mental Model
 
 Scan → Describe → Resume → Decide → Act → Verify
+
+## Updated ZIP behavior
+
+The `zip` command now supports:
+- recursive directory archiving
+- optional password protection
+- detailed archive logging
+- optional `--images-only` filtering when source paths are directories
+
+### Zip an entire folder recursively
+```powershell
+python main.py zip --sources C:\pic1 --archive output\archives\images.zip
+```
+
+### Zip only image files from a folder recursively
+```powershell
+python main.py zip --sources C:\pic1 --archive output\archives\images_only.zip --images-only
+```
+
+### Zip recursively with password protection
+```powershell
+python main.py zip --sources C:\pic1 --archive output\archives\secure_images.zip --password mysecret
+```
+
+### Archive logging
+```powershell
+Get-Content logs\archive.log -Tail 50
+```
+
+Notes:
+- If `pyzipper` is installed, password protection uses AES encryption.
+- If `pyzipper` is not available, the tool falls back to standard ZIP creation without password protection and logs a warning.

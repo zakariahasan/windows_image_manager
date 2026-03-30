@@ -93,7 +93,12 @@ def run_cli() -> None:
         return
 
     if args.command == "zip":
-        archive = create_zip_archive([Path(s) for s in args.sources], Path(args.archive), args.password)
+        archive = create_zip_archive(
+            [Path(s) for s in args.sources],
+            Path(args.archive),
+            password=args.password,
+            images_only=args.images_only,
+        )
         print(f"Archive created: {archive}")
         return
 

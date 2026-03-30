@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     zip_parser.add_argument("--sources", nargs="+", required=True)
     zip_parser.add_argument("--archive", required=True)
     zip_parser.add_argument("--password")
+    zip_parser.add_argument("--images-only", action="store_true", help="Only include image files when zipping directories")
 
     send_parser = subparsers.add_parser("send", help="Send file over local network")
     send_parser.add_argument("--host", required=True)
