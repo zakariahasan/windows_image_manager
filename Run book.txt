@@ -1,0 +1,340 @@
+🧭 WINDOWS IMAGE MANAGER — OPERATIONS RUNBOOK
+1. 🎯 Purpose of This Runbook
+
+This runbook explains:
+
+How to set up and run the system
+How to scan images safely
+How to resume failed scans
+How to use CSV-driven operations
+How to handle duplicates
+How to perform file operations safely
+How to troubleshoot issues
+How to run in production-like scenarios
+
+2. 🏗️ System Overview (Operational View)
+Scan Images → Generate CSV → Review CSV → Execute Actions → Verify Results
+                     ↓
+                Checkpoint (resume)
+	
+3. ⚙️ Environment Setup
+3.1 Activate Virtual Environment
+cd windows_file_manager
+.venv\Scripts\activate
+
+3.2 Install Dependencies
+pip install -r requirements.txt
+
+3.3 Fix Import Path (IMPORTANT)
+$env:PYTHONPATH="src"
+
+3.4 Verify Setup
+python main.py --help
+
+4. 📂 Directory Preparation
+
+Create working directories:
+mkdir output
+mkdir output\checkpoints
+mkdir output\logs
+mkdir output\archives
+
+5. 🔍 IMAGE SCANNING OPERATIONS
+5.1 Basic Scan
+python main.py scan-images `
+  --targets C:\pic `
+  --extensions .jpg .png `
+  --output-csv output\scan_results.csv
+  
+5.2 Scan with Hashing (Recommended)
+python main.py scan-images `
+  --targets C:\pic `
+  --extensions .jpg .png `
+  --output-csv output\scan_results.csv `
+  --hash
+✔ Enables:
+
+duplicate detection later
+integrity verification
+
+5.3 Scan with Checkpoint (Production Mode)
+python main.py scan-images `
+  --targets C:\pic `
+  --extensions .jpg .png `
+  --output-csv output\scan_results.csv `
+  --hash `
+  --checkpoint output\checkpoints\scan_progress.json
+  
+5.4 What Happens Internally
+    1. Recursively scan directories
+    2. Filter only image files
+    3. Extract metadata
+    4. Optionally compute hash
+    5. Save progress to checkpoint
+    6. Write CSV report
+	
+6. 🔁 FAILURE RECOVERY (CRITICAL)
+Scenario: Scan Interrupted
+
+Example causes:
+
+system crash
+Ctrl+C
+power failure
+
+Resume Scan
+python main.py scan-images `
+  --targets C:\pic `
+  --output-csv output\scan_results.csv `
+  --hash `
+  --checkpoint output\checkpoints\scan_progress.json
+✔ System will:
+- read checkpoint file
+- skip already processed images
+- continue from last point
+
+Checkpoint File Example
+
+{
+  "processed_paths": [
+    "C:\\pic\\img1.jpg",
+    "C:\\pic\\img2.png"
+  ]
+}
+
+7. 📊 CSV REPORT UNDERSTANDING
+
+Sample CSV Columns
+
+file_name
+full_path
+extension
+size_bytes
+width
+height
+image_format
+image_mode
+is_valid_image
+hash_value
+action_taken
+action_status
+remarks
+
+What to Check Before Actions
+
+✔ Remove invalid images:
+is_valid_image = False
+✔ Filter large files:
+size_mb > threshold
+✔ Identify duplicates:
+same hash_value
+
+8. 🔁 DUPLICATE DETECTION
+
+Run Duplicate Scan
+
+python main.py duplicates `
+  --targets C:\pic `
+  --checkpoint output\checkpoints\dup_scan.json
+  
+Output Example  
+
+group_id | hash | file_count
+  - C:\pic\a.jpg
+  - C:\pic\b.jpg
+  
+Strategy
+ 
+Option 1: Keep one, delete others
+Option 2: Move duplicates to archive folder
+Option 3: Rename duplicates
+
+9. 📦 DIRECT FILE OPERATIONS
+9.1 Copy Images
+
+python main.py copy-images `
+  --sources C:\pic\a.jpg `
+  --destination D:\images `
+  --policy rename
+  
+9.2 Move Images
+
+python main.py move-images `
+  --sources C:\pic\a.jpg `
+  --destination D:\archive `
+  --policy hash-compare-skip
+  
+9.3 Duplicate Handling Policies
+
+skip                 → ignore file
+overwrite            → replace existing
+rename               → add suffix
+hash-compare-skip    → skip if same content
+
+10. 📄 CSV-DRIVEN OPERATIONS (MOST IMPORTANT)
+10.1 Copy from CSV
+
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action copy `
+  --destination D:\reviewed_images `
+  --policy rename `
+  --output-csv output\copy_results.csv
+
+10.2 Move from CSV
+
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action move `
+  --destination D:\archive `
+  --policy hash-compare-skip `
+  --output-csv output\move_results.csv
+  
+10.3 Delete from CSV
+
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action delete `
+  --output-csv output\delete_results.csv
+  
+10.4 Dry Run (SAFE MODE)
+
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action move `
+  --destination D:\archive `
+  --dry-run `
+  --output-csv output\dry_run.csv
+
+✔ No files modified
+✔ Only simulation
+
+11. 🗜️ ZIP ARCHIVE OPERATIONS
+Create ZIP
+
+python main.py zip `
+  --sources C:\pic\a.jpg C:\pic\b.jpg `
+  --archive output\archives\images.zip
+  
+With Password
+
+python main.py zip `
+  --sources C:\pic\a.jpg `
+  --archive output\archives\secure.zip `
+  --password mypassword
+  
+12. 🌐 LOCAL NETWORK TRANSFER
+12.1 Start Receiver
+
+python main.py receive `
+  --port 9000 `
+  --destination D:\incoming
+  
+12.2 Send File
+
+python main.py send `
+  --host 192.168.1.10 `
+  --port 9000 `
+  --file C:\pic\a.jpg
+
+13. 🧠 IMAGE INSPECTION
+
+python main.py image-info --image C:\pic\a.jpg
+
+✔ Outputs:
+
+resolution
+format
+EXIF metadata
+
+14. 🤖 MACHINE LEARNING WORKFLOW
+14.1 Train Model
+
+python main.py train-image-model `
+  --dataset dataset\images `
+  --model-dir models\
+  
+Dataset Structure
+
+dataset/
+  cats/
+    cat1.jpg
+  dogs/
+    dog1.jpg
+	
+14.2 Predict Image
+
+python main.py classify-image `
+  --image C:\pic\test.jpg `
+  --model-dir models\
+  
+15. 📜 LOG MONITORING
+Log Files
+
+logs/app.log
+logs/scan.log
+logs/errors.log
+
+Check Errors
+Get-Content logs\errors.log -Tail 50
+
+16. 🚨 TROUBLESHOOTING GUIDE
+Issue: ModuleNotFoundError
+
+✔ Fix:
+$env:PYTHONPATH="src"
+
+Issue: Permission Denied
+
+✔ Fix:
+
+Run PowerShell as admin
+Skip system paths
+
+Issue: Slow Scan
+
+✔ Causes:
+
+hashing enabled
+large files
+
+✔ Fix:
+Disable hash or parallelize (future improvement)
+
+Issue: Duplicate not detected
+
+✔ Ensure:
+--hash enabled during scan
+
+Issue: CSV action failed
+
+✔ Check:
+file exists?
+path correct?
+permissions?
+
+17. 🔐 SAFETY BEST PRACTICES
+
+✔ Always run dry-run first
+✔ Keep original CSV backup
+✔ Use hash-compare-skip for safety
+✔ Never run delete on first attempt
+✔ Use checkpoint for large scans
+
+18. 📈 PRODUCTION BEST PRACTICES
+
+✔ Use checkpoint always
+✔ Log everything
+✔ Separate input/output drives
+✔ Archive before delete
+✔ Use CSV as audit log
+
+19. 🔄 END-TO-END WORKFLOW (RECOMMENDED)
+STEP 1 → Scan images
+STEP 2 → Review CSV
+STEP 3 → Detect duplicates
+STEP 4 → Clean CSV (optional)
+STEP 5 → Dry-run actions
+STEP 6 → Execute actions
+STEP 7 → Archive or transfer
+STEP 8 → Verify logs + CSV

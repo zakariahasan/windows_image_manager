@@ -1,0 +1,970 @@
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   WINDOWS IMAGE MANAGER TOOLKIT                                              │
+│                              End-to-End Architecture Poster (ASCII)                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+  USER / OPERATOR
+  ───────────────
+     |
+     | runs commands such as
+     |-----------------------------------------------------------------------------------------------+
+     | scan-images                                                                                   |
+     | duplicates                                                                                    |
+     | copy-images                                                                                   |
+     | move-images                                                                                   |
+     | csv-action                                                                                    |
+     | zip                                                                                           |
+     | send / receive                                                                                |
+     | image-info                                                                                    |
+     | train-image-model / classify-image                                                            |
+     v                                                                                               |
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                               main.py                                                        │
+│                                      Thin application entry point                                            │
+│                                     imports and executes run_cli()                                           │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     |
+     v
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                           cli/commands.py                                                    │
+│                                                run_cli()                                                     │
+│                                                                                                              │
+│  Responsibilities                                                                                            │
+│  - load settings                                                                                             │
+│  - setup logging                                                                                             │
+│  - build parser                                                                                              │
+│  - dispatch command                                                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     |
+     +-------------------------------+--------------------------------+----------------------------------+
+     |                               |                                |                                  |
+     v                               v                                v                                  v
+┌──────────────────────┐   ┌──────────────────────────┐   ┌──────────────────────────┐      ┌───────────────────-───┐
+│   config/loader.py   │   │  logging/logger.py       │   │   cli/parser.py          │      │    services/          │
+│----------------------│   │--------------------------│   │--------------------------│      │ optional orchestration│
+│ load_settings()      │   │ setup_logging()          │   │ build_parser()           │      │ layer for reuse       │
+└──────────┬───────────┘   │ get_logger()             │   └──────────────────────────┘      └────────────────────-──┘
+           |               └────────────┬────────────-┘
+           v                            |
+┌──────────────────────────┐            |
+│  config/settings.py      │            |
+│--------------------------│            |
+│ AppSettings              │            |
+│ LogSettings              │            |
+│ ScanSettings             │            |
+│ TransferSettings         │            |
+│ ArchiveSettings          │            |
+│ MlSettings               │            |
+└──────────────────────────┘            |
+                                        v
+                             ┌──────────────────────────┐
+                             │      LOG FILES           │
+                             │--------------------------│
+                             │ logs/app.log             │
+                             │ logs/scan.log            │
+                             │ logs/duplicates.log      │
+                             │ logs/archive.log         │
+                             │ logs/transfer.log        │
+                             │ logs/ml.log              │
+                             │ logs/errors.log          │
+                             └──────────────────────────┘
+
+
+================================================================================================================
+                                          COMMAND ROUTING LAYER
+================================================================================================================
+
+  run_cli()
+     |
+     +--> [scan-images] ------------------------+
+     |                                          |
+     +--> [duplicates] ----------------------+  |
+     |                                        | |
+     +--> [copy-images] -------------------+  | |
+     |                                     |  | |
+     +--> [move-images] ----------------+  |  | |
+     |                                  |  |  | |
+     +--> [csv-action] -------------+   |  |  | |
+     |                              |   |  |  | |
+     +--> [zip] ------------------+ |   |  |  | |
+     |                            | |   |  |  | |
+     +--> [send] ---------------+ | |   |  |  | |
+     |                          | | |   |  |  | |
+     +--> [receive] ----------+ | | |   |  |  | |
+     |                        | | | |   |  |  | |
+     +--> [image-info] -----+ | | | |   |  |  | |
+     |                      | | | | |   |  |  | |
+     +--> [train-image-model] | | | |   |  |  | |
+     |                      | | | | |   |  |  | |
+     +--> [classify-image] -+ | | | |   |  |  | |
+                            | | | | |   |  |  | |
+                            v v v v v   v  v  v v
+
+
+================================================================================================================
+                                         CORE BUSINESS MODULES
+================================================================================================================
+
+A) IMAGE SCANNING PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                            scanner/scanner.py                                                │
+│                                               ImageScanner                                                   │
+│                                                                                                              │
+│  scan()                                                                                                      │
+│   ├─ generate scan_id                                                                                        │
+│   ├─ normalize image extensions                                                                              │
+│   ├─ load checkpoint watermark                                                                               │
+│   ├─ recursive scan through targets                                                                          │
+│   └─ yield FileRecord objects                                                                                │
+│                                                                                                              │
+│  _scan_target()                                                                                              │
+│   ├─ target.is_file() or target.rglob("*")                                                                   │
+│   ├─ skip system paths                                                                                       │
+│   ├─ skip non-files                                                                                          │
+│   ├─ filter by image extensions                                                                              │
+│   ├─ skip already-processed paths from checkpoint                                                            │
+│   ├─ call build_image_record()                                                                               │
+│   └─ update watermark progress                                                                               │
+│                                                                                                              │
+│  _load_checkpoint() / _mark_progress()                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     |
+     +--> uses ---------------------------------------------------------------+
+     |                                                                         |
+     v                                                                         v
+┌──────────────────────────────────────────────┐                  ┌────────────────────────────────────────────┐
+│             scanner/metadata.py              │                  │               checkpoint file              │
+│----------------------------------------------│                  │--------------------------------------------│
+│ build_image_record()                         │                  │ JSON watermark / resume state              │
+│  ├─ path.stat()                              │                  │ stores processed_paths                     │
+│  ├─ PIL.Image.open()                         │                  │ lets a failed scan restart safely          │
+│  ├─ read width / height / format / mode      │                  └────────────────────────────────────────────┘
+│  ├─ guess MIME type                          │
+│  ├─ optional hash_file()                     │
+│  └─ create FileRecord                        │
+└───────────────────────┬──────────────────────┘
+                        |
+                        v
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                            models/file_record.py                                             │
+│                                                FileRecord                                                    │
+│                                                                                                              │
+│ scan_id | file_name | full_path | extension | size_bytes | size_mb | created_at | modified_at | accessed_at  │
+│ mime_type | width | height | image_format | image_mode | is_valid_image                                      │
+│ hash_algorithm | hash_value | duplicate_group_id | action_taken | action_status | remarks                    │
+│                                                                                                              │
+│ to_csv_row()                                                                                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     |
+     v
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                              utils/csv_utils.py                                              │
+│                                                                                                              │
+│ export_records_to_csv()                                                                                      │
+│  ├─ write CSV header                                                                                         │
+│  └─ write FileRecord rows                                                                                    │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+     |
+     v
+┌──────────────────────────────────────────────┐
+│                CSV REPORT                    │
+│----------------------------------------------│
+│ output/scan_results.csv                      │
+│ image inventory + metadata + hash + actions  │
+└──────────────────────────────────────────────┘
+
+
+
+B) DUPLICATE IMAGE DETECTION PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+scan-images / duplicates command
+     |
+     v
+┌──────────────────────────────────────────────┐
+│         duplicates/detector.py               │
+│            DuplicateDetector                 │
+│----------------------------------------------│
+│ find_duplicates(paths)                       │
+│  ├─ group files by size                      │
+│  ├─ hash only candidate same-size files      │
+│  ├─ group by content hash                    │
+│  └─ create DuplicateGroup objects            │
+└───────────────────────┬──────────────────────┘
+                        |
+                        v
+┌──────────────────────────────────────────────┐
+│        models/duplicate_group.py             │
+│----------------------------------------------│
+│ DuplicateGroup                               │
+│  - group_id                                  │
+│  - hash_algorithm                            │
+│  - hash_value                                │
+│  - size_bytes                                │
+│  - files[]                                   │
+└──────────────────────────────────────────────┘
+
+
+
+C) DIRECT FILE ACTIONS PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[copy-images] / [move-images]
+     |
+     +--------------------------------------------------------------+
+     |                                                              |
+     v                                                              v
+┌──────────────────────────────────────────────┐       ┌──────────────────────────────────────────────┐
+│          operations/copier.py                │       │           operations/mover.py                │
+│----------------------------------------------│       │----------------------------------------------│
+│ copy_file()                                  │       │ move_file()                                  │
+│  ├─ ensure destination dir                   │       │  ├─ ensure destination dir                   │
+│  ├─ disk space check                         │       │  ├─ disk space check                         │
+│  ├─ resolve duplicate policy                 │       │  ├─ resolve duplicate policy                 │
+│  └─ shutil.copy2()                           │       │  └─ shutil.move()                            │
+└───────────────────────┬──────────────────────┘       └───────────────────────┬──────────────────────┘
+                        |                                                      |
+                        +------------------------+-----------------------------+
+                                                 |
+                                                 v
+                                 ┌────────────────────────────────────────────┐
+                                 │      operations/duplicate_policy.py        │
+                                 │--------------------------------------------│
+                                 │ DuplicateHandling Enum                     │
+                                 │  - SKIP                                    │
+                                 │  - OVERWRITE                               │
+                                 │  - RENAME                                  │
+                                 │  - HASH_COMPARE_SKIP                       │
+                                 │                                            │
+                                 │ resolve_destination()                      │
+                                 │  ├─ skip                                   │
+                                 │  ├─ overwrite                              │
+                                 │  ├─ rename with suffix                     │
+                                 │  └─ compare hashes first                   │
+                                 └────────────────────────────────────────────┘
+
+
+
+D) CSV-DRIVEN ACTIONS PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[csv-action]
+     |
+     v
+┌───────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                        operations/csv_actions.py                                              │
+│                                          apply_actions_from_csv()                                             │
+│                                                                                                               │
+│  1. read CSV rows                                                                                             │
+│  2. for each row                                                                                              │
+│      ├─ source = Path(full_path)                                                                              │
+│      ├─ if missing -> mark source-missing                                                                     │
+│      ├─ if action == copy -> call copy_file()                                                                 │
+│      ├─ if action == move -> call move_file()                                                                 │
+│      ├─ if action == delete -> unlink()                                                                       │
+│      └─ update action_taken / action_status / remarks                                                         │
+│  3. write updated CSV                                                                                         │
+└───────────────────────┬───────────────────────────────────────────────────────────────────────────────────────┘
+                        |
+                        +--> uses ---------------------+
+                        |                              |
+                        v                              v
+             ┌─────────────────────────┐    ┌─────────────────────────┐
+             │ utils/csv_utils.py      │    │ copy_file()/ move_file()│
+             │-------------------------│    └─────────────────────────┘
+             │ read_csv_rows()         │
+             │ write_csv_rows()        │
+             └─────────────────────────┘
+                        |
+                        v
+             ┌────────────────────────────────────────────┐
+             │            UPDATED CSV REPORT              │
+             │--------------------------------------------│
+             │ original scan rows + action results        │
+             │ success / failed / deleted / remarks       │
+             └────────────────────────────────────────────┘
+
+
+
+E) ARCHIVE PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[zip]
+     |
+     v
+┌──────────────────────────────────────────────┐
+│            archive/zipper.py                 │
+│----------------------------------------------│
+│ create_zip_archive()                         │
+│  ├─ ensure output directory                  │
+│  ├─ if password -> pyzipper AES zip          │
+│  └─ else -> standard zipfile                 │
+└──────────────────────────────────────────────┘
+     |
+     v
+┌──────────────────────────────────────────────┐
+│                ZIP ARCHIVE                   │
+│----------------------------------------------│
+│ output/archives/...zip                       │
+└──────────────────────────────────────────────┘
+
+
+
+F) LOCAL NETWORK TRANSFER PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[send]                                                   [receive]
+  |                                                         |
+  v                                                         v
+┌───────────────────────────────┐                 ┌───────────────────────────────┐
+│   transfer/sender.py          │                 │   transfer/receiver.py        │
+│-------------------------------│                 │-------------------------------│
+│ send_file()                   │                 │ receive_once()                │
+│  ├─ create socket connection  │                 │  ├─ bind/listen/accept        │
+│  ├─ build header              │                 │  ├─ receive header            │
+│  ├─ send metadata             │                 │  ├─ parse header              │
+│  └─ send file chunks          │                 │  ├─ save chunks               │
+└───────────────┬───────────────┘                 │  └─ verify checksum           │
+                |                                 └───────────────┬───────────────┘
+                v                                                 |
+┌───────────────────────────────┐                                 |
+│   transfer/protocol.py        │<--------------------------------+
+│-------------------------------│
+│ build_header()                │
+│ parse_header()                │
+└───────────────┬───────────────┘
+                v
+┌───────────────────────────────┐
+│ models/transfer_models.py     │
+│-------------------------------│
+│ TransferHeader                │
+│ TransferResult                │
+└───────────────────────────────┘
+
+
+
+G) IMAGE UTILITY PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[image-info] / future image workflows
+     |
+     +-------------------------------+-------------------------------+------------------------------+
+     |                               |                               |                              |
+     v                               v                               v                              v
+┌───────────────────────────────┐  ┌───────────────────────────────┐ ┌────────────────────────────┐ ┌────────────────────────────┐
+│ image_utils/inspector.py      │  │ image_utils/processor.py      │ │ image_utils/organizer.py   │ │ image_utils/image_hash.py  │
+│-------------------------------│  │-------------------------------│ │----------------------------│ │----------------------------│
+│ is_valid_image()              │  │ resize_image()                │ │ organize_images_by_format()│ │ perceptual_hash()          │
+│ get_image_info()              │  │ convert_image()               │ └────────────────────────────┘ └────────────────────────────┘
+│ read_exif()                   │  │ create_thumbnail()            │
+└───────────────────────────────┘  └───────────────────────────────┘
+
+
+
+H) MACHINE LEARNING PATH
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[train-image-model]                                             [classify-image]
+       |                                                               |
+       v                                                               v
+┌──────────────────────────────────────┐                  ┌──────────────────────────────────────┐
+│           ml/trainer.py              │                  │          ml/predictor.py             │
+│--------------------------------------│                  │--------------------------------------│
+│ train_image_classifier()             │                  │ predict_image_class()                │
+│  ├─ discover labeled images          │                  │  ├─ load model                       │
+│  ├─ extract features                 │                  │  ├─ load label encoder               │
+│  ├─ split train/test                 │                  │  ├─ extract features                 │
+│  ├─ train RandomForest               │                  │  ├─ predict label                    │
+│  ├─ evaluate                         │                  │  └─ return probabilities             │ 
+│  └─ save model artifacts             │                  └──────────────────────────────────────┘
+└────────────────┬─────────────────────┘
+                 |
+                 +-----------------------+--------------------------+----------------------+
+                 |                       |                          |                      |
+                 v                       v                          v                      v
+     ┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────┐  ┌───────────────────────┐
+     │ ml/dataset.py         │  │ ml/features.py        │  │ ml/persistence.py     │  │ model artifacts       │
+     │-----------------------│  │-----------------------│  │-----------------------│  │-----------------------│
+     │ discover_labeled_     │  │ extract_image_        │  │ save_artifact()       │  │ image_classifier.     │
+     │ images()              │  │ features()            │  │ load_artifact()       │  │ joblib                │
+     └───────────────────────┘  └───────────────────────┘  └───────────────────────┘  │ label_encoder.joblib  │
+                                                                                      └───────────────────────┘
+
+
+
+================================================================================================================
+                                         SHARED INFRASTRUCTURE
+================================================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                  utils/                                                      │
+│--------------------------------------------------------------------------------------------------------------│
+│ paths.py         -> ensure_directory(), unique_destination_path(), is_probably_system_path()                 │
+│ hashing.py       -> hash_file(), hash_bytes()                                                                │
+│ csv_utils.py     -> export_records_to_csv(), read_csv_rows(), write_csv_rows()                               │
+│ time_utils.py    -> isoformat_from_timestamp()                                                               │
+│ disk.py          -> free space / destination capacity checks                                                 │
+│ file_helpers.py  -> guess_mime_type(), normalize_extensions()                                                │
+│ retry.py         -> retry_call()                                                                             │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                  models/                                                     │
+│--------------------------------------------------------------------------------------------------------------│
+│ file_record.py       -> FileRecord                                                                           │
+│ duplicate_group.py   -> DuplicateGroup                                                                       │
+│ transfer_models.py   -> TransferHeader, TransferResult                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+================================================================================================================
+                                             TESTING LAYER
+================================================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                                   tests/                                                     │
+│--------------------------------------------------------------------------------------------------------------│
+│ conftest.py                 -> shared pytest fixtures                                                        │
+│ test_hashing.py             -> verifies hashing logic                                                        │
+│ test_duplicate_detector.py  -> verifies duplicate grouping                                                   │
+│ test_scanner.py             -> verifies image-only scan                                                      │
+│ test_csv_export.py          -> verifies CSV creation                                                         │
+│ test_duplicate_policy.py    -> verifies duplicate resolution behavior                                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+
+
+================================================================================================================
+                                              OUTPUTS / ARTIFACTS
+================================================================================================================
+
+  1. CSV scan report
+     - output/scan_results.csv
+
+  2. Updated CSV action report
+     - output/images_after_copy.csv
+     - output/images_after_move.csv
+     - output/images_after_delete.csv
+
+  3. Checkpoint / watermark JSON
+     - output/checkpoints/scan_progress.json
+
+  4. Logs
+     - logs/*.log
+
+  5. ZIP archives
+     - output/archives/*.zip
+
+  6. Received files
+     - chosen receive destination
+
+  7. ML artifacts
+     - models/image_classifier.joblib
+     - models/label_encoder.joblib
+
+
+
+================================================================================================================
+                                         MOST IMPORTANT BUSINESS PIPELINE
+================================================================================================================
+
+  scan-images
+      |
+      v
+  ImageScanner
+      |
+      v
+  build_image_record
+      |
+      v
+  FileRecord
+      |
+      v
+  CSV report
+      |
+      v
+  csv-action
+      |
+      +--> copy
+      +--> move
+      +--> delete
+      |
+      v
+  updated CSV + logs + moved/copied/deleted image files
+
+
+
+================================================================================================================
+                                              MENTAL MODEL
+================================================================================================================
+
+  DISCOVER IMAGES
+      ->
+  DESCRIBE THEM IN CSV
+      ->
+  SAVE WATERMARK PROGRESS
+      ->
+  RESUME SAFELY IF NEEDED
+      ->
+  ACT ON FILES DIRECTLY OR FROM CSV
+      ->
+  EXTEND WITH DUPLICATES / ZIP / TRANSFER / ML
+  
+  
+  
+================================================================================================================
+  Layered Architecture Diagram
+  
+================================================================================================================
++----------------------------------------------------------------------------------+
+|                                USER / OPERATOR                                   |
+|----------------------------------------------------------------------------------|
+| Runs CLI commands such as:                                                       |
+| - scan-images                                                                    |
+| - duplicates                                                                     |
+| - copy-images                                                                    |
+| - move-images                                                                    |
+| - csv-action                                                                     |
+| - zip                                                                            |
+| - send / receive                                                                 |
+| - train-image-model / classify-image                                             |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                              ENTRY / INTERFACE LAYER                             |
+|----------------------------------------------------------------------------------|
+| main.py                                                                          |
+| cli/parser.py                                                                    |
+| cli/commands.py                                                                  |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - start program                                                                  |
+| - parse command-line arguments                                                   |
+| - dispatch command to correct module/service                                     |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                           CONFIGURATION / BOOTSTRAP LAYER                        |
+|----------------------------------------------------------------------------------|
+| config/settings.py                                                               |
+| config/loader.py                                                                 |
+| logging/logger.py                                                                |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - load environment settings                                                      |
+| - build AppSettings                                                              |
+| - initialize rotating file logs                                                  |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                             APPLICATION / ORCHESTRATION LAYER                    |
+|----------------------------------------------------------------------------------|
+| services/scan_service.py                                                         |
+| services/duplicate_service.py                                                    |
+| services/file_action_service.py                                                  |
+| services/archive_service.py                                                      |
+| services/transfer_service.py                                                     |
+| services/ml_service.py                                                           |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - wrap lower-level modules into reusable workflows                               |
+| - support future GUI / API / automation reuse                                    |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                               CORE BUSINESS LAYER                                |
+|----------------------------------------------------------------------------------|
+| scanner/                                                                         |
+| duplicates/                                                                      |
+| operations/                                                                      |
+| archive/                                                                         |
+| transfer/                                                                        |
+| image_utils/                                                                     |
+| ml/                                                                              |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - scan images recursively                                                        |
+| - extract image metadata                                                         |
+| - detect duplicates by hash                                                      |
+| - copy / move / delete images                                                    |
+| - process CSV-driven actions                                                     |
+| - zip files                                                                      |
+| - transfer files over LAN                                                        |
+| - inspect/process images                                                         |
+| - train/predict ML image classifier                                              |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                           SHARED INFRASTRUCTURE / SUPPORT LAYER                  |
+|----------------------------------------------------------------------------------|
+| models/                                                                          |
+| utils/                                                                           |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - shared dataclasses                                                             |
+| - hashing                                                                        |
+| - path helpers                                                                   |
+| - CSV helpers                                                                    |
+| - time formatting                                                                |
+| - disk checks                                                                    |
+| - file type normalization                                                        |
++-------------------------------------------+--------------------------------------+
+                                            |
+                                            v
++----------------------------------------------------------------------------------+
+|                              EXTERNAL LIBRARIES / OS                             |
+|----------------------------------------------------------------------------------|
+| pathlib                                                                          |
+| csv                                                                              |
+| json                                                                             |
+| shutil                                                                           |
+| socket                                                                           |
+| zipfile / pyzipper                                                               |
+| Pillow (PIL)                                                                     |
+| imagehash                                                                        |
+| scikit-learn                                                                     |
+| numpy                                                                            |
+| joblib                                                                           |
+| Windows filesystem                                                               |
+|----------------------------------------------------------------------------------|
+| Responsibilities:                                                                |
+| - filesystem access                                                              |
+| - image decoding                                                                 |
+| - network sockets                                                                |
+| - archive creation                                                               |
+| - ML training/prediction                                                         |
++----------------------------------------------------------------------------------+
+
+================================================================================================================
+Layered Dependency Direction
+================================================================================================================
+This shows the intended dependency direction.
+User
+  |
+  v
+Entry / Interface
+  |
+  v
+Bootstrap / Config
+  |
+  v
+Application / Orchestration
+  |
+  v
+Core Business Modules
+  |
+  v
+Shared Infrastructure
+  |
+  v
+External Libraries / OS
+
+
+
+================================================================================================================
+File-by-File Call Flow Diagram
+This shows how the files call one another.
+================================================================================================================
+main.py
+  |
+  +--> file_manager.cli.commands.run_cli()
+           |
+           +--> file_manager.config.loader.load_settings()
+           |      |
+           |      +--> file_manager.config.settings.AppSettings
+           |
+           +--> file_manager.logging.logger.setup_logging()
+           |
+           +--> file_manager.cli.parser.build_parser()
+           |
+           +--> command-specific flow
+================================================================================================================
+File-by-File Call Flow — scan-images
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> config/loader.py : load_settings()
+           +--> logging/logger.py : setup_logging()
+           +--> cli/parser.py : build_parser()
+           |
+           +--> scanner/scanner.py : ImageScanner(...)
+                   |
+                   +--> scan(...)
+                           |
+                           +--> _load_checkpoint(...)
+                           |
+                           +--> _scan_target(...)
+                                   |
+                                   +--> utils/paths.py : is_probably_system_path()
+                                   +--> utils/file_helpers.py : normalize_extensions()
+                                   |
+                                   +--> scanner/metadata.py : build_image_record()
+                                           |
+                                           +--> pathlib.Path.stat()
+                                           +--> PIL.Image.open()
+                                           +--> utils/file_helpers.py : guess_mime_type()
+                                           +--> utils/time_utils.py : isoformat_from_timestamp()
+                                           +--> utils/hashing.py : hash_file()   [optional]
+                                           |
+                                           +--> models/file_record.py : FileRecord
+                                   |
+                                   +--> _mark_progress(...)
+                                           |
+                                           +--> utils/paths.py : ensure_directory()
+                                           +--> json checkpoint write
+           |
+           +--> utils/csv_utils.py : export_records_to_csv()
+                   |
+                   +--> models/file_record.py : FileRecord.to_csv_row()
+================================================================================================================
+File-by-File Call Flow — duplicates
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> scanner/scanner.py : ImageScanner.scan()
+           |       |
+           |       +--> scanner/metadata.py : build_image_record()
+           |       +--> models/file_record.py : FileRecord
+           |
+           +--> duplicates/detector.py : DuplicateDetector.find_duplicates()
+                   |
+                   +--> pathlib.Path.stat()
+                   +--> utils/hashing.py : hash_file()
+                   +--> models/duplicate_group.py : DuplicateGroup
+================================================================================================================
+File-by-File Call Flow — copy-images
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> operations/copier.py : copy_file()
+                   |
+                   +--> utils/paths.py : ensure_directory()
+                   +--> utils/disk.py : has_enough_disk_space()
+                   +--> operations/duplicate_policy.py : resolve_destination()
+                           |
+                           +--> utils/paths.py : unique_destination_path()
+                           +--> utils/hashing.py : hash_file()   [for hash-compare-skip]
+                   |
+                   +--> shutil.copy2()
+================================================================================================================
+File-by-File Call Flow — move-images
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> operations/mover.py : move_file()
+                   |
+                   +--> utils/paths.py : ensure_directory()
+                   +--> utils/disk.py : has_enough_disk_space()
+                   +--> operations/duplicate_policy.py : resolve_destination()
+                           |
+                           +--> utils/paths.py : unique_destination_path()
+                           +--> utils/hashing.py : hash_file()   [for hash-compare-skip]
+                   |
+                   +--> shutil.move()
+================================================================================================================
+File-by-File Call Flow — csv-action
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> operations/csv_actions.py : apply_actions_from_csv()
+                   |
+                   +--> utils/csv_utils.py : read_csv_rows()
+                   |
+                   +--> for each CSV row
+                   |      |
+                   |      +--> Path(row["full_path"])
+                   |      |
+                   |      +--> if action == copy
+                   |      |       +--> operations/copier.py : copy_file()
+                   |      |
+                   |      +--> if action == move
+                   |      |       +--> operations/mover.py : move_file()
+                   |      |
+                   |      +--> if action == delete
+                   |              +--> Path.unlink()
+                   |
+                   +--> utils/csv_utils.py : write_csv_rows()
+================================================================================================================
+File-by-File Call Flow — zip
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> archive/zipper.py : create_zip_archive()
+                   |
+                   +--> utils/paths.py : ensure_directory()
+                   |
+                   +--> if password
+                   |      +--> pyzipper.AESZipFile
+                   |
+                   +--> else
+                          +--> zipfile.ZipFile
+================================================================================================================
+File-by-File Call Flow — send
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> transfer/sender.py : send_file()
+                   |
+                   +--> socket.create_connection()
+                   +--> transfer/protocol.py : build_header()
+                           |
+                           +--> pathlib.Path.stat()
+                           +--> utils/hashing.py : hash_file()
+                           +--> models/transfer_models.py : TransferHeader
+                   |
+                   +--> socket.sendall()
+================================================================================================================
+File-by-File Call Flow — receive
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> transfer/receiver.py : receive_once()
+                   |
+                   +--> utils/paths.py : ensure_directory()
+                   +--> socket.bind()
+                   +--> socket.listen()
+                   +--> socket.accept()
+                   +--> _recv_exact()
+                   +--> transfer/protocol.py : parse_header()
+                           |
+                           +--> models/transfer_models.py : TransferHeader
+                   +--> utils/paths.py : unique_destination_path()
+                   +--> utils/hashing.py : hash_file()
+
+================================================================================================================
+File-by-File Call Flow — image-info
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> image_utils/inspector.py : get_image_info()
+           |       |
+           |       +--> PIL.Image.open()
+           |
+           +--> image_utils/inspector.py : read_exif()
+                   |
+                   +--> PIL.Image.open()
+                   +--> img.getexif()
+================================================================================================================
+File-by-File Call Flow — train-image-model
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> ml/trainer.py : train_image_classifier()
+                   |
+                   +--> ml/dataset.py : discover_labeled_images()
+                   |
+                   +--> for each image
+                   |      |
+                   |      +--> ml/features.py : extract_image_features()
+                   |              |
+                   |              +--> PIL.Image.open()
+                   |              +--> numpy.asarray()
+                   |
+                   +--> sklearn LabelEncoder
+                   +--> sklearn train_test_split
+                   +--> sklearn RandomForestClassifier.fit()
+                   +--> sklearn metrics
+                   |
+                   +--> ml/persistence.py : save_artifact()
+                           |
+                           +--> utils/paths.py : ensure_directory()
+                           +--> joblib.dump()
+================================================================================================================
+File-by-File Call Flow — classify-image
+================================================================================================================
+main.py
+  |
+  +--> cli/commands.py : run_cli()
+           |
+           +--> ml/predictor.py : predict_image_class()
+                   |
+                   +--> ml/persistence.py : load_artifact()
+                   |       |
+                   |       +--> joblib.load()
+                   |
+                   +--> ml/features.py : extract_image_features()
+                   |       |
+                   |       +--> PIL.Image.open()
+                   |       +--> numpy.asarray()
+                   |
+                   +--> model.predict()
+                   +--> model.predict_proba()
+                   +--> encoder.inverse_transform()
+================================================================================================================
+Directory Interaction Map
+================================================================================================================
+cli/
+  -> config/
+  -> logging/
+  -> scanner/
+  -> duplicates/
+  -> operations/
+  -> archive/
+  -> transfer/
+  -> image_utils/
+  -> ml/
+  -> utils/
+
+scanner/
+  -> models/
+  -> utils/
+  -> Pillow
+  -> checkpoint JSON
+
+duplicates/
+  -> models/
+  -> utils/
+
+operations/
+  -> utils/
+  -> duplicate_policy.py
+  -> shutil
+  -> CSV utilities
+
+archive/
+  -> utils/
+  -> zipfile / pyzipper
+
+transfer/
+  -> models/
+  -> utils/
+  -> socket
+
+image_utils/
+  -> Pillow
+  -> imagehash
+
+ml/
+  -> utils/
+  -> Pillow
+  -> numpy
+  -> sklearn
+  -> joblib
+================================================================================================================
+
+================================================================================================================
+
+================================================================================================================
+
+================================================================================================================
