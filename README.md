@@ -1,178 +1,229 @@
-# Windows File Manager Toolkit
+# 🖼️ Windows Image Manager Toolkit
 
-## Overview
+A modular, production-style Python project for scanning, managing, and processing images on Windows.
 
-This is a modular Python project for:
-- filesystem scanning
-- metadata export to CSV
-- duplicate detection by content hash
-- copy/move with duplicate handling
-- ZIP creation with optional password protection
-- local network file transfer
-- image inspection and processing
-- image ML training and inference
-
+---
 ## Project layout
 
 ```text
 windows_file_manager/
+│
+├── main.py
 ├── README.md
 ├── requirements.txt
 ├── .env.example
-├── main.py
-├── pyproject.toml
+│
 ├── src/
-│   └── file_manager/
-│       ├── config/
-│       ├── logging/
-│       ├── models/
-│       ├── utils/
-│       ├── scanner/
-│       ├── duplicates/
-│       ├── operations/
-│       ├── archive/
-│       ├── transfer/
-│       ├── image_utils/
-│       ├── ml/
-│       ├── cli/
-│       └── services/
+│ └── file_manager/
+│ ├── cli/
+│ ├── scanner/
+│ ├── operations/
+│ ├── duplicates/
+│ ├── archive/
+│ ├── transfer/
+│ ├── image_utils/
+│ ├── ml/
+│ ├── utils/
+│ ├── models/
+│ ├── config/
+│ ├── logging/
+│ └── services/
+│
 └── tests/
 ```
+# 🚀 Features
 
-## Setup
+## 🔍 Image Scanning
+- Recursively scan full drives or directories
+- Filter by image types (.jpg, .png, etc.)
+- Extract metadata (size, resolution, format, mode)
+- Optional hashing for duplicate detection
+- Export results to CSV
 
-### 1. Create virtual environment
+## 🔁 Resume / Checkpoint (Watermark)
+- Automatically saves scan progress
+- Resume scan after failure or interruption
 
-```bash
+## 📊 CSV-Based Workflow
+- CSV acts as a source of truth
+- Perform actions using CSV: copy, move, delete
+- Tracks action status in CSV
+
+## 📦 File Operations
+- Copy or move files with duplicate handling:
+  skip, overwrite, rename, hash-compare-skip
+
+## 🧠 Duplicate Detection
+- Detect duplicates by content (hash-based)
+
+## 🗜️ Archiving
+- ZIP files with optional password
+
+## 🌐 Local Network Transfer
+- Send/receive files over LAN
+
+## 🧠 Machine Learning
+- Train and classify images
+
+## 📜 Logging
+- app.log, scan.log, errors.log
+
+---
+
+# ⚙️ Setup
+
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
-```
-
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
+$env:PYTHONPATH="src"
 ```
 
-### 3. Set environment variables
+---
 
-Copy `.env.example` to `.env` and edit as needed.
+# 📂 Create Directories
 
-## Usage examples
-
-### Scan files and export CSV
-
-```bash
-python main.py scan --targets C:\Users\YourName\Downloads D:\Data --extensions .jpg .png .pdf --output-csv output\scan_results.csv --hash
+```powershell
+mkdir output
+mkdir output\checkpoints
+mkdir logs
+mkdir output\archives
 ```
 
-### Find duplicates
+---
 
-```bash
-python main.py duplicates --targets C:\Users\YourName\Downloads --extensions .jpg .png
+# 🔍 Scan Images
+
+```powershell
+python main.py scan-images `
+  --targets C:\pic `
+  --extensions .jpg .png `
+  --output-csv output\scan_results.csv `
+  --hash `
+  --checkpoint output\checkpoints\scan_progress.json
 ```
 
-### Copy files
+---
 
-```bash
-python main.py copy --sources C:\Temp\a.txt C:\Temp\b.txt --destination D:\Collected --policy rename
+# 🔁 Resume Scan
+
+Re-run same command to resume.
+
+---
+
+# 📄 CSV Actions
+
+## Copy
+```powershell
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action copy `
+  --destination D:\reviewed `
+  --output-csv output\copy_results.csv
 ```
 
-### Move files
-
-```bash
-python main.py move --sources C:\Temp\a.txt --destination D:\Archive --policy hash-compare-skip
+## Move
+```powershell
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action move `
+  --destination D:\archive `
+  --output-csv output\move_results.csv
 ```
 
-### Create zip archive
-
-```bash
-python main.py zip --sources C:\Temp\a.txt C:\Temp\b.txt --archive output\archives\backup.zip --password mysecret
+## Delete
+```powershell
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action delete `
+  --output-csv output\delete_results.csv
 ```
 
-### Receive file on one machine
-
-```bash
-python main.py receive --bind-host 0.0.0.0 --port 50505 --destination D:\Incoming
+## Dry Run
+```powershell
+python main.py csv-action `
+  --csv output\scan_results.csv `
+  --action move `
+  --destination D:\archive `
+  --dry-run `
+  --output-csv output\dry_run.csv
 ```
 
-### Send file from another machine
+---
 
-```bash
-python main.py send --host 192.168.1.50 --port 50505 --file C:\Temp\photo.jpg
+# 🗜️ Archive
+
+```powershell
+python main.py zip --sources C:\pic\a.jpg --archive output\archives\images.zip
 ```
 
-### Train image classifier
+---
 
-Dataset layout:
+# 🌐 Transfer
 
-```text
-dataset/
-├── cats/
-│   ├── img1.jpg
-│   ├── img2.jpg
-├── dogs/
-│   ├── img3.jpg
-│   ├── img4.jpg
+## Receive
+```powershell
+python main.py receive --port 9000 --destination D:\incoming
 ```
 
-Train:
-
-```bash
-python main.py train-image-model --dataset dataset --model-dir models
+## Send
+```powershell
+python main.py send --host 192.168.1.10 --port 9000 --file C:\pic\a.jpg
 ```
 
-### Predict image class
+---
 
-```bash
-python main.py classify-image --image sample.jpg --model-dir models
+# 🧠 Image Info
+
+```powershell
+python main.py image-info --image C:\pic\a.jpg
 ```
 
-### Inspect image metadata
+---
 
-```bash
-python main.py image-info --image sample.jpg
+# 🤖 ML
+
+## Train
+```powershell
+python main.py train-image-model --dataset dataset\images --model-dir models\
 ```
 
-## Duplicate handling behavior
-
-Supported policies:
-- `skip`
-- `overwrite`
-- `rename`
-- `hash-compare-skip`
-
-## Password-protected ZIP notes
-
-Standard Python `zipfile` does not provide strong modern encryption for writing password-protected ZIPs.
-This project uses `pyzipper` when available. If `pyzipper` is missing, the project falls back to standard ZIP creation without password protection.
-
-## Logging
-
-Logs are written to:
-- `logs/app.log`
-- `logs/scan.log`
-- `logs/duplicates.log`
-- `logs/transfer.log`
-- `logs/ml.log`
-- `logs/archive.log`
-- `logs/errors.log`
-
-## Testing
-
-Run:
-
-```bash
-pytest
+## Predict
+```powershell
+python main.py classify-image --image C:\pic\test.jpg --model-dir models\
 ```
 
-## Future improvements
+---
 
-- store metadata in SQLite or PostgreSQL
-- multithreaded scanning
-- resumable transfers with manifest files
-- TLS-encrypted transfer
-- GUI frontend
-- FastAPI backend
-- deeper image similarity search using embeddings
-- OCR integration
+# 📜 Logs
+
+```powershell
+Get-Content logs\errors.log -Tail 50
+```
+
+---
+
+# ⚠️ Troubleshooting
+
+## Fix import error
+```powershell
+$env:PYTHONPATH="src"
+```
+
+## Slow scan
+- Disable hash if not needed
+
+## Permission issues
+- Run PowerShell as admin
+
+---
+
+# 📈 Workflow
+
+Scan → Review CSV → Detect duplicates → Dry-run → Execute → Verify
+
+---
+
+# 🧠 Mental Model
+
+Scan → Describe → Resume → Decide → Act → Verify
