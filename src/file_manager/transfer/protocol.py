@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from file_manager.models.transfer_models import TransferHeader
@@ -13,7 +14,7 @@ def build_header(path: Path) -> bytes:
         file_size=path.stat().st_size,
         checksum=hash_file(path),
     )
-    payload = json.dumps(header.__dict__).encode("utf-8")
+    payload = json.dumps(asdict(header)).encode("utf-8")
     return len(payload).to_bytes(8, "big") + payload
 
 
